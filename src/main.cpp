@@ -8,137 +8,87 @@
 #include <WiFiUdp.h>
 #include "BluetoothA2DPSource.h"
 
-// --- Screen Settings ---
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define OLED_RESET    -1
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+#define W_WIDTH 128
+#define W_HEIGHT 64
+Adafruit_SSD1306 display(W_WIDTH, W_HEIGHT, &Wire, -1);
 
-// --- Wi-Fi & ROS 2 UDP Settings ---
-const char* ssid = "Veera";
-const char* password = "veera2013";
 WiFiUDP udp;
-const unsigned int localUdpPort = 4210; 
-char incomingPacket[255];
+BluetoothA2DPSource a2dp;
 
-// --- Bluetooth Speaker Name ---
-const char* bluetooth_speaker_name = "M13VP"; 
-BluetoothA2DPSource a2dp_source;
+#define I2S_WS  15
+#define I2S_SD  32
+#define I2S_SCK 14
 
-// --- Classic ESP32 Pin Connections ---
-#define OLED_SDA        21
-#define OLED_SCL        22
+Servo sL, sR;
+int16_t buf[512];
 
-#define I2S_MIC_WS      15
-#define I2S_MIC_SD      32
-#define I2S_MIC_SCK     14
-
-#define LEFT_SERVO_PIN  13
-#define RIGHT_SERVO_PIN 12
-
-// --- Audio Configuration ---
-#define SAMPLE_RATE     16000
-#define AUDIO_BUFFER_LEN 512
-int16_t audioBuffer[AUDIO_BUFFER_LEN];
-
-Servo leftServo;
-Servo rightServo;
-
-// --- Bluetooth Stream Data Provider ---
-int32_t get_audio_data(Frame *channels, int32_t len) {
-    size_t bytesRead = 0;
-    // Read audio directly from the I2S Microphone
-    i2s_read(I2S_NUM_0, &audioBuffer, len * sizeof(int16_t), &bytesRead, 0);
-    
-    int32_t samples = bytesRead / sizeof(int16_t);
-    for (int32_t i = 0; i < samples; i++) {
-        channels[i].channel1 = audioBuffer[i]; // Left audio stream channel
-        channels[i].channel2 = audioBuffer[i]; // Right audio stream channel (mono duplication)
+int32_t get_audio_data(Frame *ch, int32_t len) {
+    size_t r = 0;
+    i2s_read(I2S_NUM_0, &buf, len * 2, &r, 0);
+    int32_t smp = r / 2;
+    for (int32_t i = 0; i < smp; i++) {
+        ch[i].channel1 = buf[i];
+        ch[i].channel2 = buf[i];
     }
-    return samples;
+    return smp;
 }
 
-void drawExpression(String expression) {
+void drawEx(char ex) {
     display.clearDisplay();
-    if (expression == "HAPPY") {
-        display.fillRoundRect(30, 20, 20, 30, 10, SSD1306_WHITE);
-        display.fillRoundRect(78, 20, 20, 30, 10, SSD1306_WHITE);
-    } else if (expression == "SAD") {
-        display.fillTriangle(30, 40, 50, 20, 30, 20, SSD1306_WHITE);
-        display.fillTriangle(98, 40, 78, 20, 98, 20, SSD1306_WHITE);
+    if (ex == 'H') { // HAPPY
+        display.fillRoundRect(30, 20, 20, 30, 10, 1);
+        display.fillRoundRect(78, 20, 20, 30, 10, 1);
+    } else if (ex == 'S') { // SAD
+        display.fillTriangle(30, 40, 50, 20, 30, 20, 1);
+        display.fillTriangle(98, 40, 78, 20, 98, 20, 1);
     } else { // NEUTRAL
-        display.fillCircle(40, 32, 12, SSD1306_WHITE);
-        display.fillCircle(88, 32, 12, SSD1306_WHITE);
+        display.fillCircle(40, 32, 12, 1);
+        display.fillCircle(88, 32, 12, 1);
     }
     display.display();
 }
 
-void initMicrophone() {
-    i2s_config_t mic_config = {
+void setup() {
+    Wire.begin(21, 22);
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    drawEx('N');
+
+    WiFi.begin("YOUR_WIFI_SSID", "YOUR_WIFI_PASSWORD");
+    while (WiFi.status() != WL_CONNECTED) { delay(100); }
+    udp.begin(4210);
+
+    i2s_config_t mc = {
         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
-        .sample_rate = SAMPLE_RATE,
+        .sample_rate = 16000,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .intr_alloc_flags = 1,
         .dma_buf_count = 4,
-        .dma_buf_len = 512,
-        .use_apll = false
+        .dma_buf_len = 512
     };
-    i2s_pin_config_t mic_pins = {
-        .bck_io_num = I2S_MIC_SCK,
-        .ws_io_num = I2S_MIC_WS,
-        .data_out_num = I2S_PIN_NO_CHANGE,
-        .data_in_num = I2S_MIC_SD
-    };
-    i2s_driver_install(I2S_NUM_0, &mic_config, 0, NULL);
-    i2s_set_pin(I2S_NUM_0, &mic_pins);
-}
+    i2s_pin_config_t mp = {.bck_io_num = I2S_SCK, .ws_io_num = I2S_WS, .data_out_num = -1, .data_in_num = I2S_SD};
+    i2s_driver_install(I2S_NUM_0, &mc, 0, NULL);
+    i2s_set_pin(I2S_NUM_0, &mp);
 
-void setup() {
-    Serial.begin(115200);
+    a2dp.start("YOUR_BT_SPEAKER_NAME", get_audio_data);
 
-    Wire.begin(OLED_SDA, OLED_SCL);
-    if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
-        Serial.println("OLED failed");
-    }
-    drawExpression("NEUTRAL");
-
-    // Connect to Wi-Fi
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    udp.begin(localUdpPort);
-
-    initMicrophone();
-    
-    // Connect wirelessly to your Bluetooth Speaker
-    a2dp_source.start(bluetooth_speaker_name, get_audio_data);
-
-    // Initialize both arm servos at 0 degrees rest position
-    leftServo.attach(LEFT_SERVO_PIN);
-    leftServo.write(0); 
-    rightServo.attach(RIGHT_SERVO_PIN);
-    rightServo.write(0);
+    sL.attach(13); sL.write(0);
+    sR.attach(12); sR.write(0);
 }
 
 void loop() {
-    // Process incoming ROS 2 UDP Packets
-    int packetSize = udp.parsePacket();
-    if (packetSize) {
-        int len = udp.read(incomingPacket, 255);
-        if (len > 0) incomingPacket[len] = 0;
-        
-        String command = String(incomingPacket);
-        if (command.startsWith("EXP:")) {
-            drawExpression(command.substring(4));
-        } else if (command.startsWith("SRVL:")) {
-            leftServo.write(command.substring(5).toInt());
-        } else if (command.startsWith("SRVR:")) {
-            rightServo.write(command.substring(5).toInt());
+    char pkt[32];
+    int sz = udp.parsePacket();
+    if (sz > 0) {
+        int len = udp.read(pkt, 31);
+        if (len > 0) {
+            pkt[len] = 0;
+            if (strncmp(pkt, "EXP:", 4) == 0) drawEx(pkt[4]);
+            else if (strncmp(pkt, "SRVL:", 5) == 0) sL.write(atoi(pkt + 5));
+            else if (strncmp(pkt, "SRVR:", 5) == 0) sR.write(atoi(pkt + 5));
         }
     }
-    delay(10); // Keeps background Bluetooth framework stable
+    delay(10);
 }
+
