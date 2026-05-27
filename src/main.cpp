@@ -45,15 +45,15 @@ Servo leftServo;
 Servo rightServo;
 
 // --- Bluetooth Stream Data Provider ---
-int32_t get_audio_data(Channels *channels, int32_t len) {
+int32_t get_audio_data(Frame *channels, int32_t len) {
     size_t bytesRead = 0;
     // Read audio directly from the I2S Microphone
     i2s_read(I2S_NUM_0, &audioBuffer, len * sizeof(int16_t), &bytesRead, 0);
     
     int32_t samples = bytesRead / sizeof(int16_t);
     for (int32_t i = 0; i < samples; i++) {
-        channels[i].left = audioBuffer[i];
-        channels[i].right = audioBuffer[i]; // Send mono to both channels
+        channels[i].channel1 = audioBuffer[i]; // Left audio stream channel
+        channels[i].channel2 = audioBuffer[i]; // Right audio stream channel (mono duplication)
     }
     return samples;
 }
