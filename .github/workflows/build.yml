@@ -18,6 +18,9 @@ jobs:
       - name: Install PlatformIO
         run: pip install -U platformio
 
+      - name: Force Clean Cache
+        run: pio run --target clean
+
       - name: Compile Classic ESP32 Firmware
         run: pio run -e esp32dev
 
