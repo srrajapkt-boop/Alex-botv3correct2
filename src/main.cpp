@@ -8,14 +8,13 @@
 #include <ESP32Servo.h>
 #include <Adafruit_SSD1306.h>
 
-// --- ADD THESE GLOBAL DECLARATIONS ---
+// Global ROS 2 variables
 rcl_subscription_t subscriber;
 std_msgs__msg__String msg;
 rclc_support_t support;
 rcl_allocator_t allocator;
 rcl_node_t node;
 rclc_executor_t executor;
-// --------------------------------------
 
 Servo sL, sR;
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -29,25 +28,31 @@ void subscription_callback(const void *msgin) {
 }
 
 void setup() {
-  // Use a proper char* cast to fix the warning
+  // Use char arrays for transport credentials
   char ssid[] = "YOUR_HOTSPOT_NAME";
   char pass[] = "YOUR_PASSWORD";
-  char ip[] = "192.168.4.2";
+  char ip[] = "192.168.4.2"; // Replace with your Termux environment IP
   
   set_microros_wifi_transports(ssid, pass, ip, 8888);
   
-  sL.attach(13); sR.attach(12);
+  delay(2000); // Allow time for network connection
+  
+  sL.attach(13); 
+  sR.attach(12);
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 
   allocator = rcl_get_default_allocator();
   rclc_support_init(&support, 0, NULL, &allocator);
   rclc_node_init_default(&node, "alex_bot", "", &support);
   
-  rclc_subscription_init_default(&subscriber, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), "alex_cmd");
+  rclc_subscription_init_default(&subscriber, &node, 
+                                 ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), 
+                                 "alex_cmd");
   
   executor = rclc_executor_get_zero_initialized_executor();
   rclc_executor_init(&executor, &support.context, 1, &allocator);
-  rclc_executor_add_subscription(&executor, &subscriber, &msg, &subscription_callback, ON_NEW_DATA);
+  rclc_executor_add_subscription(&executor, &subscriber, &msg, 
+                                 &subscription_callback, ON_NEW_DATA);
 }
 
 void loop() {
