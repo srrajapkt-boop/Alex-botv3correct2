@@ -5,7 +5,6 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -18,15 +17,12 @@ jobs:
       - name: Install PlatformIO
         run: pip install -U platformio
 
-      - name: Force Clean Cache
-        run: pio run --target clean
-
-      - name: Compile Classic ESP32 Firmware
+      - name: Compile Firmware
         run: pio run -e esp32dev
 
       - name: Upload Firmware Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: alex-bot-classic-firmware
+          name: alex-bot-firmware
           path: .pio/build/esp32dev/firmware.bin
           
