@@ -14,8 +14,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install PlatformIO
-        run: pip install -U platformio
+      - name: Install PlatformIO and Dependencies
+        run: |
+          pip install -U platformio
+          pio pkg install
 
       - name: Compile Firmware
         run: pio run -e esp32dev
